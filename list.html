@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#0f1117" />
+  <title>StoreDesk — Counter List</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── App Bar ──────────────────────────────────────── -->
+  <header class="app-bar">
+    <div class="logo">🛒 <span>StoreDesk</span></div>
+    <nav class="nav-links">
+      <a href="admin.html">Admin</a>
+      <a href="list.html" class="active">Counter</a>
+      <button id="logoutBtn">Logout</button>
+    </nav>
+  </header>
+
+  <!-- ── Sticky Search + Privacy Bar ─────────────────── -->
+  <div class="search-bar-wrap">
+    <div class="search-input-row">
+
+      <!-- Search Input -->
+      <div class="search-input-wrap">
+        <span class="search-icon">🔍</span>
+        <input
+          type="search"
+          id="searchInput"
+          placeholder="Search products…"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          inputmode="search"
+        />
+      </div>
+
+      <!-- Privacy Toggle: Hide Buy Price -->
+      <div class="privacy-toggle">
+        <label class="toggle-switch" title="Hide wholesale cost from customers">
+          <input type="checkbox" id="hidePriceToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-label">Hide<br>Cost</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Result Count ──────────────────────────────────── -->
+  <div class="result-count" id="resultCount"></div>
+
+  <!-- ── Product Grid ─────────────────────────────────── -->
+  <main class="product-grid" id="productGrid">
+    <!-- Loading state -->
+    <div class="state-message" id="loadingState">
+      <div class="spinner"></div>
+      <p>Loading inventory…</p>
+    </div>
+  </main>
+
+  <!-- ── Scripts ──────────────────────────────────────── -->
+  <script type="module">
+    import { auth, db } from "./app.js";
+    import { onAuthStateChanged, signOut }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { collection, onSnapshot, query, orderBy }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    // ── Auth Guard ──────────────────────────────────────
+    onAuthStateChanged(auth, user => {
+      if (!user) window.location.href = "index.html";
+    });
+
+    // ── Logout ──────────────────────────────────────────
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await signOut(auth);
+      sessionStorage.removeItem("gh_pat");
+      window.location.href = "index.html";
+    });
+
+    // ── State ────────────────────────────────────────────
+    let allProducts  = [];   // Full local array from onSnapshot
+    let hideWholesale = false;
+
+    const grid        = document.getElementById("productGrid");
+    const searchEl    = document.getElementById("searchInput");
+    const toggleEl    = document.getElementById("hidePriceToggle");
+    const countEl     = document.getElementById("resultCount");
+    const loadingEl   = document.getElementById("loadingState");
+
+    // ── Firestore Real-time Listener ─────────────────────
+    // Uses onSnapshot ordered by lastUpdated desc
+    // → Recently added/edited items float to the top automatically
+    const productsRef = collection(db, "products");
+    const q = query(productsRef, orderBy("lastUpdated", "desc"));
+
+    onSnapshot(q, (snapshot) => {
+      // Rebuild local array from snapshot
+      allProducts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      renderList(); // Re-render with current search term
+    }, (err) => {
+      console.error("[list.js] Firestore error:", err);
+      grid.innerHTML = `
+        <div class="state-message">
+          <div class="icon">⚠️</div>
+          <p>Failed to load products.<br>Check your connection.</p>
+        </div>`;
+    });
+
+    // ── Client-Side Search ───────────────────────────────
+    // Filters against the pre-lowercased 'nameLower' field
+    // in memory — no extra Firestore reads per keystroke
+    searchEl.addEventListener("input", renderList);
+
+    // ── Privacy Toggle ───────────────────────────────────
+    toggleEl.addEventListener("change", () => {
+      hideWholesale = toggleEl.checked;
+      // Apply/remove CSS class on the grid to trigger blur via CSS
+      grid.classList.toggle("hide-wholesale", hideWholesale);
+    });
+
+    // ── Render Function ──────────────────────────────────
+    function renderList() {
+      const query = searchEl.value.trim().toLowerCase();
+
+      // Filter products by nameLower field
+      const filtered = query
+        ? allProducts.filter(p => p.nameLower && p.nameLower.includes(query))
+        : allProducts;
+
+      // Update result count
+      countEl.textContent = filtered.length > 0
+        ? `${filtered.length} product${filtered.length !== 1 ? "s" : ""} found`
+        : "";
+
+      // Clear grid (keep hide-wholesale class state)
+      const wasHiding = grid.classList.contains("hide-wholesale");
+      grid.innerHTML = "";
+      if (wasHiding) grid.classList.add("hide-wholesale");
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `
+          <div class="state-message">
+            <div class="icon">${query ? "🔎" : "📦"}</div>
+            <p>${query ? `No products matching "<strong>${escapeHtml(query)}</strong>"` : "No products yet.<br>Add some from the Admin panel."}</p>
+          </div>`;
+        return;
+      }
+
+      // Render each product card
+      filtered.forEach((product, idx) => {
+        const card = buildCard(product, idx);
+        grid.appendChild(card);
+      });
+    }
+
+    // ── Card Builder ─────────────────────────────────────
+    function buildCard(p, idx) {
+      const card = document.createElement("div");
+      card.className = "product-card";
+      card.style.animationDelay = `${idx * 0.04}s`;
+
+      // Image section
+      const imageHtml = p.imageUrl
+        ? `<img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.name)}" loading="lazy" />`
+        : `<div class="no-image">🛍️</div>`;
+
+      // Bulk breakdown text
+      const bulkText = `1 ${escapeHtml(p.bulkUnit || "unit")} → ${p.piecesPerBulk || "?"} ${escapeHtml(p.unitType || "pcs")}`;
+
+      // Cost per unit
+      const costStr = p.buyPricePerUnit != null
+        ? `₹${Number(p.buyPricePerUnit).toFixed(2)}`
+        : "—";
+
+      // MRP block (optional)
+      const mrpHtml = p.mrpPerUnit != null
+        ? `<div class="price-block">
+             <span class="price-label">MRP / ${escapeHtml(p.unitType || "unit")}</span>
+             <span class="mrp-amount">₹${Number(p.mrpPerUnit).toFixed(2)}</span>
+           </div>`
+        : "";
+
+      card.innerHTML = `
+        <div class="product-image">${imageHtml}</div>
+        <div class="product-body">
+
+          <div class="product-name">${escapeHtml(p.name)}</div>
+
+          <div class="product-bulk-info">
+            📦 ${escapeHtml(bulkText)}
+            &nbsp;·&nbsp;
+            Bulk ₹${Number(p.buyPriceBulk || 0).toFixed(2)}
+          </div>
+
+          <div class="product-prices">
+            <!-- .buy-price class is targeted by CSS .hide-wholesale rule -->
+            <div class="price-block buy-price">
+              <span class="price-label">Cost / ${escapeHtml(p.unitType || "unit")}</span>
+              <span class="buy-price-amount">${costStr}</span>
+            </div>
+            ${mrpHtml}
+          </div>
+
+        </div>
+      `;
+
+      return card;
+    }
+
+    // ── XSS Helper ───────────────────────────────────────
+    function escapeHtml(str) {
+      if (typeof str !== "string") return "";
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+  </script>
+</body>
+</html>

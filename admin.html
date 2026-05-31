@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#0f1117" />
+  <title>StoreDesk — Admin Panel</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Toast Container ──────────────────────────────── -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ── App Bar ──────────────────────────────────────── -->
+  <header class="app-bar">
+    <div class="logo">🛒 <span>StoreDesk</span></div>
+    <nav class="nav-links">
+      <a href="admin.html" class="active">Admin</a>
+      <a href="list.html">Counter</a>
+      <button id="logoutBtn">Logout</button>
+    </nav>
+  </header>
+
+  <!-- ── Page Content ─────────────────────────────────── -->
+  <div class="page-wrapper">
+
+    <!-- Page Header -->
+    <div class="admin-header container">
+      <h2>Add Product</h2>
+      <p>Fill in the bulk purchase details to add a new inventory item.</p>
+    </div>
+
+    <!-- Form Card -->
+    <div class="admin-form-card">
+
+      <!-- ── Section: Product Identity ─────────────── -->
+      <div class="section-divider"><span>Product Identity</span></div>
+
+      <div class="form-group">
+        <label for="productName">Product Name <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="productName" placeholder="e.g. Sunflower Oil" />
+      </div>
+
+      <!-- ── Section: Bulk Purchase Details ────────── -->
+      <div class="section-divider"><span>Bulk Purchase</span></div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="buyPriceBulk">Total Bulk Buy Price (₹) <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="buyPriceBulk" placeholder="e.g. 1200" min="0" step="0.01" inputmode="decimal" />
+        </div>
+        <div class="form-group">
+          <label for="bulkUnit">Bulk Unit Type <span style="color:var(--danger)">*</span></label>
+          <select id="bulkUnit">
+            <option value="">Select…</option>
+            <option value="Packet">Packet</option>
+            <option value="Box">Box</option>
+            <option value="Sack">Sack</option>
+            <option value="Bag">Bag</option>
+            <option value="Carton">Carton</option>
+            <option value="Bundle">Bundle</option>
+            <option value="Crate">Crate</option>
+            <option value="Drum">Drum</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="piecesPerBulk">Total Pieces / Qty Inside <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="piecesPerBulk" placeholder="e.g. 24" min="1" step="1" inputmode="numeric" />
+        </div>
+        <div class="form-group">
+          <label for="unitType">Retail Unit Type <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="unitType" placeholder="e.g. Pcs, KG, Ltr" />
+        </div>
+      </div>
+
+      <!-- ── Real-time Cost Preview ─────────────────── -->
+      <div class="cost-preview" id="costPreview">
+        <span class="label">Calculated Cost / Unit</span>
+        <span class="value" id="costPerUnitDisplay">—</span>
+      </div>
+
+      <!-- ── Section: Retail Pricing ───────────────── -->
+      <div class="section-divider"><span>Retail Pricing (Optional)</span></div>
+
+      <div class="form-group">
+        <label for="mrpPerUnit">MRP per Retail Unit (₹)</label>
+        <input type="number" id="mrpPerUnit" placeholder="e.g. 60.00" min="0" step="0.01" inputmode="decimal" />
+      </div>
+
+      <!-- ── Section: Product Image ─────────────────── -->
+      <div class="section-divider"><span>Product Image</span></div>
+
+      <!-- Image Preview Box -->
+      <div class="image-preview-box" id="imagePreviewBox">
+        <div class="placeholder">
+          <div class="icon">📷</div>
+          <p>Image preview</p>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="imageFile">Upload Image (JPG / PNG / WEBP)</label>
+        <input type="file" id="imageFile" accept="image/jpeg,image/png,image/webp,image/gif" />
+      </div>
+
+      <!-- Upload progress bar (shows during GitHub upload) -->
+      <div class="upload-progress" id="uploadProgress">
+        <div class="upload-progress-bar" id="uploadProgressBar"></div>
+      </div>
+
+      <!-- ── Submit Button ──────────────────────────── -->
+      <button class="btn btn-primary" id="submitBtn" style="margin-top: 20px;">
+        <span id="submitBtnText">💾 Save Product</span>
+      </button>
+
+    </div>
+    <!-- /admin-form-card -->
+
+  </div>
+  <!-- /page-wrapper -->
+
+  <!-- ── Scripts ──────────────────────────────────────── -->
+  <script type="module">
+    import { auth, db, uploadImageToGitHub } from "./app.js";
+    import { onAuthStateChanged, signOut }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { collection, addDoc, serverTimestamp }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    // ── Auth Guard ──────────────────────────────────────
+    // Redirect unauthenticated users back to login
+    onAuthStateChanged(auth, user => {
+      if (!user) window.location.href = "index.html";
+    });
+
+    // ── Logout ──────────────────────────────────────────
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await signOut(auth);
+      sessionStorage.removeItem("gh_pat");
+      window.location.href = "index.html";
+    });
+
+    // ── Toast Helper ────────────────────────────────────
+    function showToast(message, type = "info") {
+      const container = document.getElementById("toastContainer");
+      const icons = { success: "✅", error: "❌", info: "ℹ️" };
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `<span>${icons[type]}</span><span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add("dismissing");
+        toast.addEventListener("animationend", () => toast.remove(), { once: true });
+      }, 4000);
+    }
+
+    // ── Refs ─────────────────────────────────────────────
+    const buyPriceEl    = document.getElementById("buyPriceBulk");
+    const piecesEl      = document.getElementById("piecesPerBulk");
+    const costDisplay   = document.getElementById("costPerUnitDisplay");
+    const imageFileEl   = document.getElementById("imageFile");
+    const previewBox    = document.getElementById("imagePreviewBox");
+    const submitBtn     = document.getElementById("submitBtn");
+    const submitBtnText = document.getElementById("submitBtnText");
+    const progressBar   = document.getElementById("uploadProgress");
+    const progressFill  = document.getElementById("uploadProgressBar");
+
+    // ── Real-time Cost Preview ────────────────────────────
+    // Triggered on every keystroke in price or pieces fields
+    function updateCostPreview() {
+      const price  = parseFloat(buyPriceEl.value);
+      const pieces = parseFloat(piecesEl.value);
+      if (price > 0 && pieces > 0) {
+        const unitCost = (price / pieces).toFixed(2);
+        costDisplay.textContent = `₹${unitCost}`;
+      } else {
+        costDisplay.textContent = "—";
+      }
+    }
+
+    buyPriceEl.addEventListener("input", updateCostPreview);
+    piecesEl.addEventListener("input", updateCostPreview);
+
+    // ── Image Preview ─────────────────────────────────────
+    imageFileEl.addEventListener("change", () => {
+      const file = imageFileEl.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      previewBox.innerHTML = `<img src="${url}" alt="Preview" />`;
+    });
+
+    // ── Form Submit ───────────────────────────────────────
+    submitBtn.addEventListener("click", async () => {
+      // ── 1. Collect & Validate ──────────────────────────
+      const name       = document.getElementById("productName").value.trim();
+      const bulkPrice  = parseFloat(buyPriceEl.value);
+      const bulkUnit   = document.getElementById("bulkUnit").value.trim();
+      const pieces     = parseFloat(piecesEl.value);
+      const unitType   = document.getElementById("unitType").value.trim();
+      const mrp        = parseFloat(document.getElementById("mrpPerUnit").value) || null;
+      const imageFile  = imageFileEl.files[0] || null;
+
+      // Validate required fields
+      if (!name) { showToast("Product name is required.", "error"); return; }
+      if (!bulkPrice || bulkPrice <= 0) { showToast("Enter a valid bulk buy price.", "error"); return; }
+      if (!bulkUnit) { showToast("Select a bulk unit type.", "error"); return; }
+      if (!pieces || pieces <= 0) { showToast("Enter pieces/quantity per bulk unit.", "error"); return; }
+      if (!unitType) { showToast("Enter a retail unit type.", "error"); return; }
+
+      // ── 2. Lock UI ──────────────────────────────────────
+      submitBtn.disabled = true;
+      submitBtnText.textContent = "Uploading image…";
+      progressBar.classList.add("active");
+      progressFill.style.width = "30%";
+
+      let imageUrl = "";
+
+      try {
+        // ── 3. Upload Image (if provided) ─────────────────
+        if (imageFile) {
+          progressFill.style.width = "55%";
+          imageUrl = await uploadImageToGitHub(imageFile, imageFile.name);
+          progressFill.style.width = "80%";
+        }
+
+        // ── 4. Calculate Unit Cost ────────────────────────
+        const buyPricePerUnit = parseFloat((bulkPrice / pieces).toFixed(4));
+
+        // ── 5. Save to Firestore ──────────────────────────
+        submitBtnText.textContent = "Saving to database…";
+        progressFill.style.width = "90%";
+
+        await addDoc(collection(db, "products"), {
+          name:            name,
+          nameLower:       name.toLowerCase(),  // For fast client-side search
+          buyPriceBulk:    bulkPrice,
+          bulkUnit:        bulkUnit,
+          piecesPerBulk:   pieces,
+          unitType:        unitType,
+          buyPricePerUnit: buyPricePerUnit,
+          mrpPerUnit:      mrp,
+          imageUrl:        imageUrl,
+          lastUpdated:     serverTimestamp()
+        });
+
+        progressFill.style.width = "100%";
+        showToast(`"${name}" saved successfully! ✨`, "success");
+
+        // ── 6. Reset form ─────────────────────────────────
+        setTimeout(() => {
+          document.getElementById("productName").value     = "";
+          buyPriceEl.value                                 = "";
+          document.getElementById("bulkUnit").value        = "";
+          piecesEl.value                                   = "";
+          document.getElementById("unitType").value        = "";
+          document.getElementById("mrpPerUnit").value      = "";
+          imageFileEl.value                                = "";
+          costDisplay.textContent                          = "—";
+          previewBox.innerHTML = `
+            <div class="placeholder">
+              <div class="icon">📷</div>
+              <p>Image preview</p>
+            </div>`;
+          progressBar.classList.remove("active");
+          progressFill.style.width = "0%";
+          submitBtn.disabled       = false;
+          submitBtnText.textContent = "💾 Save Product";
+        }, 800);
+
+      } catch (err) {
+        console.error("[admin.js] Submit error:", err);
+        showToast(`Error: ${err.message}`, "error");
+        submitBtn.disabled        = false;
+        submitBtnText.textContent = "💾 Save Product";
+        progressBar.classList.remove("active");
+        progressFill.style.width  = "0%";
+      }
+    });
+
+  </script>
+</body>
+</html>
