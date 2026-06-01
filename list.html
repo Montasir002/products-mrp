@@ -40,24 +40,41 @@
         <span class="toggle-label">Hide<br>Cost</span>
       </div>
     </div>
+
+    <!-- Sort toggle row -->
+    <div class="sort-row">
+      <span class="sort-label">Sort:</span>
+      <button class="sort-btn active" id="sortAlpha" data-sort="alpha">A → Z</button>
+      <button class="sort-btn" id="sortRecent" data-sort="recent">Recent</button>
+    </div>
   </div>
 
   <div class="result-count" id="resultCount"></div>
 
   <main class="product-grid" id="productGrid">
-    <div class="state-message">
-      <div class="spinner"></div>
-      <p>Loading inventory…</p>
-    </div>
+    <!-- Skeleton cards shown while first batch loads -->
+    <div class="skeleton-card"></div>
+    <div class="skeleton-card"></div>
+    <div class="skeleton-card"></div>
   </main>
+
+  <!-- Load More button (hidden until needed) -->
+  <div class="load-more-wrap" id="loadMoreWrap" style="display:none;">
+    <button class="btn btn-secondary load-more-btn" id="loadMoreBtn">
+      Load More
+    </button>
+  </div>
 
   <script type="module">
     import { auth, db } from "./app.js";
     import { onAuthStateChanged, signOut }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { collection, onSnapshot, query, orderBy }
-      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import {
+      collection, query, orderBy,
+      limit, startAfter, getDocs
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+    // ── Auth Guard ──────────────────────────────────────
     onAuthStateChanged(auth, user => {
       if (!user) window.location.href = "index.html";
     });
@@ -68,69 +85,192 @@
       window.location.href = "index.html";
     });
 
+    // ── Constants ────────────────────────────────────────
+    const PAGE_SIZE = 25;
+
     // ── State ────────────────────────────────────────────
-    let allProducts   = [];
+    let allLoaded     = [];       // All products fetched so far (text data only)
+    let lastDoc       = null;     // Firestore cursor for next page
+    let hasMore       = true;     // Whether more pages exist
+    let isFetching    = false;    // Prevent duplicate fetches
     let hideWholesale = false;
+    let currentSort   = "alpha";  // "alpha" | "recent"
+    let searchTerm    = "";
     const revealedIds = new Set();
 
-    const grid     = document.getElementById("productGrid");
-    const searchEl = document.getElementById("searchInput");
-    const toggleEl = document.getElementById("hidePriceToggle");
-    const countEl  = document.getElementById("resultCount");
+    // ── DOM Refs ─────────────────────────────────────────
+    const grid        = document.getElementById("productGrid");
+    const searchEl    = document.getElementById("searchInput");
+    const toggleEl    = document.getElementById("hidePriceToggle");
+    const countEl     = document.getElementById("resultCount");
+    const loadMoreWrap= document.getElementById("loadMoreWrap");
+    const loadMoreBtn = document.getElementById("loadMoreBtn");
 
-    // ── Firestore ────────────────────────────────────────
-    const q = query(collection(db, "products"), orderBy("lastUpdated", "desc"));
-    onSnapshot(q, (snapshot) => {
-      allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderList();
-    }, (err) => {
-      console.error("[list.js]", err);
-      grid.innerHTML = `<div class="state-message"><div class="icon">⚠️</div><p>Failed to load.<br>Check your connection.</p></div>`;
+    // ── Build Firestore Query ────────────────────────────
+    // Sorted by nameLower (A→Z) or lastUpdated (Recent)
+    // Uses getDocs (one-time fetch) + pagination cursor
+    function buildQuery(afterDoc = null) {
+      const col       = collection(db, "products");
+      const sortField = currentSort === "alpha" ? "nameLower" : "lastUpdated";
+      const sortDir   = currentSort === "alpha" ? "asc" : "desc";
+
+      if (afterDoc) {
+        return query(col, orderBy(sortField, sortDir), startAfter(afterDoc), limit(PAGE_SIZE));
+      }
+      return query(col, orderBy(sortField, sortDir), limit(PAGE_SIZE));
+    }
+
+    // ── Fetch Next Batch ─────────────────────────────────
+    async function fetchNextBatch() {
+      if (isFetching || !hasMore) return;
+      isFetching = true;
+      loadMoreBtn.textContent = "Loading…";
+      loadMoreBtn.disabled    = true;
+
+      try {
+        const q        = buildQuery(lastDoc);
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty || snapshot.docs.length < PAGE_SIZE) {
+          hasMore = false;
+          loadMoreWrap.style.display = "none";
+        } else {
+          loadMoreWrap.style.display = "flex";
+          loadMoreBtn.textContent    = "Load More";
+          loadMoreBtn.disabled       = false;
+        }
+
+        // Store cursor for next page
+        if (!snapshot.empty) {
+          lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        }
+
+        // Append new products to local array (text data only)
+        const newProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        allLoaded.push(...newProducts);
+
+        // Remove skeleton cards on first load
+        grid.querySelectorAll(".skeleton-card").forEach(s => s.remove());
+
+        // Render only the NEW cards (append, don't re-render all)
+        newProducts.forEach((product, idx) => {
+          grid.appendChild(buildCard(product, allLoaded.length - newProducts.length + idx));
+        });
+
+        updateResultCount();
+
+      } catch (err) {
+        console.error("[list.js] Fetch error:", err);
+        grid.innerHTML = `
+          <div class="state-message">
+            <div class="icon">⚠️</div>
+            <p>Failed to load products.<br>Check your connection.</p>
+          </div>`;
+      } finally {
+        isFetching = false;
+      }
+    }
+
+    // ── Load More button ─────────────────────────────────
+    loadMoreBtn.addEventListener("click", fetchNextBatch);
+
+    // ── Sort Toggle ──────────────────────────────────────
+    document.getElementById("sortAlpha").addEventListener("click",  () => switchSort("alpha"));
+    document.getElementById("sortRecent").addEventListener("click", () => switchSort("recent"));
+
+    function switchSort(newSort) {
+      if (newSort === currentSort) return;
+      currentSort = newSort;
+
+      // Update button active states
+      document.querySelectorAll(".sort-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.sort === currentSort);
+      });
+
+      // Reset everything and reload from page 1
+      resetAndReload();
+    }
+
+    // ── Search ───────────────────────────────────────────
+    // Search filters the already-loaded local array.
+    // For full search across all products, user should
+    // load all pages first (or use Load More until done).
+    let searchTimer;
+    searchEl.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchTerm = searchEl.value.trim().toLowerCase();
+        renderFiltered();
+      }, 200); // small debounce for fast typing
     });
 
-    searchEl.addEventListener("input", renderList);
-
+    // ── Privacy Toggle ───────────────────────────────────
     toggleEl.addEventListener("change", () => {
       hideWholesale = toggleEl.checked;
       revealedIds.clear();
-      renderList();
+      // Update all visible chips without full re-render
+      document.querySelectorAll(".buy-price").forEach(chip => {
+        chip.classList.toggle("cost-hidden", hideWholesale);
+        const hint = chip.querySelector(".reveal-hint");
+        if (hint) hint.classList.toggle("tap-hint", hideWholesale);
+        // Remove revealed state from all
+        chip.dataset.revealed = "false";
+      });
     });
 
-    // ── Render ───────────────────────────────────────────
-    function renderList() {
-      const term = searchEl.value.trim().toLowerCase();
-      const filtered = term
-        ? allProducts.filter(p => p.nameLower && p.nameLower.includes(term))
-        : allProducts;
+    // ── Reset & Reload from scratch ──────────────────────
+    function resetAndReload() {
+      allLoaded  = [];
+      lastDoc    = null;
+      hasMore    = true;
+      revealedIds.clear();
+      searchTerm = searchEl.value.trim().toLowerCase();
 
-      countEl.textContent = filtered.length > 0
-        ? `${filtered.length} product${filtered.length !== 1 ? "s" : ""} found`
-        : "";
+      grid.innerHTML = `
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>`;
+      loadMoreWrap.style.display = "none";
+
+      fetchNextBatch();
+    }
+
+    // ── Render filtered view (search) ────────────────────
+    // Only filters what's already loaded locally.
+    function renderFiltered() {
+      const filtered = searchTerm
+        ? allLoaded.filter(p => p.nameLower && p.nameLower.includes(searchTerm))
+        : allLoaded;
 
       grid.innerHTML = "";
 
       if (filtered.length === 0) {
         grid.innerHTML = `
           <div class="state-message">
-            <div class="icon">${term ? "🔎" : "📦"}</div>
-            <p>${term
-              ? `No products matching "<strong>${escapeHtml(term)}</strong>"`
-              : "No products yet.<br>Add some from the Admin panel."
+            <div class="icon">${searchTerm ? "🔎" : "📦"}</div>
+            <p>${searchTerm
+              ? `No products matching "<strong>${escapeHtml(searchTerm)}</strong>"`
+              : "No products yet."
             }</p>
           </div>`;
+        updateResultCount(0);
         return;
       }
 
-      filtered.forEach((product, idx) => {
-        grid.appendChild(buildCard(product, idx));
-      });
+      filtered.forEach((product, idx) => grid.appendChild(buildCard(product, idx)));
+      updateResultCount(filtered.length);
+    }
+
+    // ── Update result count label ────────────────────────
+    function updateResultCount(count) {
+      const n = count !== undefined ? count : allLoaded.length;
+      countEl.textContent = n > 0 ? `${n} product${n !== 1 ? "s" : ""} found` : "";
     }
 
     // ── Format Timestamp ─────────────────────────────────
-    // Output: "12 Jun 2025, 8:45 PM"
     function formatTimestamp(ts) {
       if (!ts) return "Unknown";
-      const date = ts.toDate ? ts.toDate() : new Date(ts);
+      const date  = ts.toDate ? ts.toDate() : new Date(ts);
       const day   = date.getDate();
       const month = date.toLocaleString("en-GB", { month: "short" });
       const year  = date.getFullYear();
@@ -139,14 +279,14 @@
     }
 
     // ── Card Builder ─────────────────────────────────────
+    // Text renders immediately.
+    // Image uses loading="lazy" — browser fetches it only
+    // when the card is about to scroll into view.
+    // Until then, a CSS skeleton shimmer shows in its place.
     function buildCard(p, idx) {
       const card = document.createElement("div");
       card.className = "product-card";
-      card.style.animationDelay = `${idx * 0.04}s`;
-
-      const imageHtml = p.imageUrl
-        ? `<img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.name)}" loading="lazy" />`
-        : `<div class="no-image">🛍️</div>`;
+      card.style.animationDelay = `${Math.min(idx, 8) * 0.04}s`;
 
       const bulkText = `1 ${escapeHtml(p.bulkUnit || "unit")} → ${p.piecesPerBulk || "?"} ${escapeHtml(p.unitType || "pcs")}`;
       const costStr  = p.buyPricePerUnit != null ? `৳${Number(p.buyPricePerUnit).toFixed(2)}` : "—";
@@ -163,19 +303,27 @@
       const blurClass  = hideWholesale && !isRevealed ? "cost-hidden" : "";
       const tapHint    = hideWholesale && !isRevealed ? "tap-hint" : "";
 
+      // Image: show skeleton div, swap to <img> on load
+      const imageHtml = p.imageUrl
+        ? `<div class="img-skeleton" id="skel-${escapeHtml(p.id)}">
+             <img
+               src="${escapeHtml(p.imageUrl)}"
+               alt="${escapeHtml(p.name)}"
+               loading="lazy"
+               decoding="async"
+               onload="this.parentElement.classList.add('loaded')"
+               onerror="this.parentElement.innerHTML='<div class=\\'no-image\\'>🛍️</div>'"
+             />
+           </div>`
+        : `<div class="product-image"><div class="no-image">🛍️</div></div>`;
+
       card.innerHTML = `
         <div class="product-card-inner">
-
           <div class="product-image">${imageHtml}</div>
-
           <div class="product-body">
             <div class="product-name-row">
               <div class="product-name">${escapeHtml(p.name)}</div>
-
-              <!-- ⋮ More button -->
               <button class="more-btn" aria-label="More info" data-id="${escapeHtml(p.id)}">⋮</button>
-
-              <!-- Dropdown anchored to top-right -->
               <div class="more-dropdown" id="dropdown-${escapeHtml(p.id)}">
                 <div class="dropdown-row">
                   <span class="dropdown-icon">🕒</span>
@@ -186,13 +334,11 @@
                 </div>
               </div>
             </div>
-
             <div class="product-bulk-info">
               📦 ${escapeHtml(bulkText)} &nbsp;·&nbsp; ৳${Number(p.buyPriceBulk || 0).toFixed(2)}
             </div>
-
             <div class="product-prices">
-              <div class="price-chip buy-price ${blurClass}" data-id="${escapeHtml(p.id)}">
+              <div class="price-chip buy-price ${blurClass}" data-id="${escapeHtml(p.id)}" data-revealed="false">
                 <span class="chip-label">Cost/${escapeHtml(p.unitType || "unit")}</span>
                 <span class="chip-value buy-price-amount">${costStr}</span>
                 <span class="reveal-hint ${tapHint}">👆 Tap</span>
@@ -200,44 +346,36 @@
               ${mrpHtml}
             </div>
           </div>
-
         </div>
       `;
 
-      // ── Cost chip tap-to-reveal ───────────────────────
+      // Cost chip tap-to-reveal
       const costChip = card.querySelector(".buy-price");
       costChip.addEventListener("click", () => {
         if (!hideWholesale) return;
-        const id = costChip.dataset.id;
-        if (revealedIds.has(id)) {
-          revealedIds.delete(id);
-        } else {
-          revealedIds.add(id);
-        }
+        const id       = costChip.dataset.id;
         const revealed = revealedIds.has(id);
-        costChip.classList.toggle("cost-hidden", !revealed);
+        if (revealed) { revealedIds.delete(id); } else { revealedIds.add(id); }
+        const nowRevealed = revealedIds.has(id);
+        costChip.classList.toggle("cost-hidden", !nowRevealed);
         const hint = costChip.querySelector(".reveal-hint");
-        if (hint) hint.classList.toggle("tap-hint", !revealed);
+        if (hint) hint.classList.toggle("tap-hint", !nowRevealed);
       });
 
-      // ── Triple dot dropdown ───────────────────────────
+      // Triple dot dropdown
       const moreBtn  = card.querySelector(".more-btn");
       const dropdown = card.querySelector(`#dropdown-${p.id}`);
-
       moreBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         const isOpen = dropdown.classList.contains("open");
-
-        // Close any other open dropdowns first
         document.querySelectorAll(".more-dropdown.open").forEach(d => d.classList.remove("open"));
-
         if (!isOpen) dropdown.classList.add("open");
       });
 
       return card;
     }
 
-    // ── Close dropdown on outside tap ────────────────────
+    // Close dropdowns on outside tap
     document.addEventListener("click", () => {
       document.querySelectorAll(".more-dropdown.open").forEach(d => d.classList.remove("open"));
     });
@@ -252,6 +390,9 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }
+
+    // ── Initial Load ─────────────────────────────────────
+    fetchNextBatch();
 
   </script>
 </body>
