@@ -9,7 +9,6 @@
 </head>
 <body>
 
-  <!-- ── App Bar ──────────────────────────────────────── -->
   <header class="app-bar">
     <div class="logo">🛒 <span>StoreDesk</span></div>
     <nav class="nav-links">
@@ -19,11 +18,8 @@
     </nav>
   </header>
 
-  <!-- ── Sticky Search + Privacy Bar ─────────────────── -->
   <div class="search-bar-wrap">
     <div class="search-input-row">
-
-      <!-- Search Input -->
       <div class="search-input-wrap">
         <span class="search-icon">🔍</span>
         <input
@@ -36,8 +32,6 @@
           inputmode="search"
         />
       </div>
-
-      <!-- Privacy Toggle: Hide Buy Price -->
       <div class="privacy-toggle">
         <label class="toggle-switch" title="Hide wholesale cost from customers">
           <input type="checkbox" id="hidePriceToggle" />
@@ -45,22 +39,18 @@
         </label>
         <span class="toggle-label">Hide<br>Cost</span>
       </div>
-
     </div>
   </div>
 
-  <!-- ── Result Count ──────────────────────────────────── -->
   <div class="result-count" id="resultCount"></div>
 
-  <!-- ── Product Grid ─────────────────────────────────── -->
   <main class="product-grid" id="productGrid">
-    <div class="state-message" id="loadingState">
+    <div class="state-message">
       <div class="spinner"></div>
       <p>Loading inventory…</p>
     </div>
   </main>
 
-  <!-- ── Scripts ──────────────────────────────────────── -->
   <script type="module">
     import { auth, db } from "./app.js";
     import { onAuthStateChanged, signOut }
@@ -68,12 +58,10 @@
     import { collection, onSnapshot, query, orderBy }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-    // ── Auth Guard ──────────────────────────────────────
     onAuthStateChanged(auth, user => {
       if (!user) window.location.href = "index.html";
     });
 
-    // ── Logout ──────────────────────────────────────────
     document.getElementById("logoutBtn").addEventListener("click", async () => {
       await signOut(auth);
       sessionStorage.removeItem("gh_pat");
@@ -83,9 +71,6 @@
     // ── State ────────────────────────────────────────────
     let allProducts   = [];
     let hideWholesale = false;
-
-    // Tracks product IDs individually tapped-to-reveal while global hide is ON.
-    // Toggle always resets this set — it levels everything back.
     const revealedIds = new Set();
 
     const grid     = document.getElementById("productGrid");
@@ -93,29 +78,21 @@
     const toggleEl = document.getElementById("hidePriceToggle");
     const countEl  = document.getElementById("resultCount");
 
-    // ── Firestore Real-time Listener ─────────────────────
+    // ── Firestore ────────────────────────────────────────
     const q = query(collection(db, "products"), orderBy("lastUpdated", "desc"));
-
     onSnapshot(q, (snapshot) => {
       allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       renderList();
     }, (err) => {
-      console.error("[list.js] Firestore error:", err);
-      grid.innerHTML = `
-        <div class="state-message">
-          <div class="icon">⚠️</div>
-          <p>Failed to load products.<br>Check your connection.</p>
-        </div>`;
+      console.error("[list.js]", err);
+      grid.innerHTML = `<div class="state-message"><div class="icon">⚠️</div><p>Failed to load.<br>Check your connection.</p></div>`;
     });
 
-    // ── Search ───────────────────────────────────────────
     searchEl.addEventListener("input", renderList);
 
-    // ── Global Privacy Toggle ────────────────────────────
-    // Switching in either direction resets ALL individual reveals.
     toggleEl.addEventListener("change", () => {
       hideWholesale = toggleEl.checked;
-      revealedIds.clear();   // ← levels up: reset every card to global state
+      revealedIds.clear();
       renderList();
     });
 
@@ -149,6 +126,18 @@
       });
     }
 
+    // ── Format Timestamp ─────────────────────────────────
+    // Output: "12 Jun 2025, 8:45 PM"
+    function formatTimestamp(ts) {
+      if (!ts) return "Unknown";
+      const date = ts.toDate ? ts.toDate() : new Date(ts);
+      const day   = date.getDate();
+      const month = date.toLocaleString("en-GB", { month: "short" });
+      const year  = date.getFullYear();
+      const time  = date.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+      return `${day} ${month} ${year}, ${time}`;
+    }
+
     // ── Card Builder ─────────────────────────────────────
     function buildCard(p, idx) {
       const card = document.createElement("div");
@@ -161,6 +150,7 @@
 
       const bulkText = `1 ${escapeHtml(p.bulkUnit || "unit")} → ${p.piecesPerBulk || "?"} ${escapeHtml(p.unitType || "pcs")}`;
       const costStr  = p.buyPricePerUnit != null ? `৳${Number(p.buyPricePerUnit).toFixed(2)}` : "—";
+      const tsStr    = formatTimestamp(p.lastUpdated);
 
       const mrpHtml = p.mrpPerUnit != null
         ? `<div class="price-chip mrp-chip">
@@ -169,19 +159,38 @@
            </div>`
         : "";
 
-      // Determine blur state for THIS card right now
       const isRevealed = revealedIds.has(p.id);
       const blurClass  = hideWholesale && !isRevealed ? "cost-hidden" : "";
       const tapHint    = hideWholesale && !isRevealed ? "tap-hint" : "";
 
       card.innerHTML = `
         <div class="product-card-inner">
+
           <div class="product-image">${imageHtml}</div>
+
           <div class="product-body">
-            <div class="product-name">${escapeHtml(p.name)}</div>
+            <div class="product-name-row">
+              <div class="product-name">${escapeHtml(p.name)}</div>
+
+              <!-- ⋮ More button -->
+              <button class="more-btn" aria-label="More info" data-id="${escapeHtml(p.id)}">⋮</button>
+
+              <!-- Dropdown anchored to top-right -->
+              <div class="more-dropdown" id="dropdown-${escapeHtml(p.id)}">
+                <div class="dropdown-row">
+                  <span class="dropdown-icon">🕒</span>
+                  <div>
+                    <div class="dropdown-label">Last Updated</div>
+                    <div class="dropdown-value">${tsStr}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="product-bulk-info">
               📦 ${escapeHtml(bulkText)} &nbsp;·&nbsp; ৳${Number(p.buyPriceBulk || 0).toFixed(2)}
             </div>
+
             <div class="product-prices">
               <div class="price-chip buy-price ${blurClass}" data-id="${escapeHtml(p.id)}">
                 <span class="chip-label">Cost/${escapeHtml(p.unitType || "unit")}</span>
@@ -191,37 +200,47 @@
               ${mrpHtml}
             </div>
           </div>
+
         </div>
       `;
 
-      // ── Per-card tap handler ──────────────────────────
-      // Only active when global hide is ON.
-      // Tapping toggles this specific product in/out of revealedIds.
+      // ── Cost chip tap-to-reveal ───────────────────────
       const costChip = card.querySelector(".buy-price");
       costChip.addEventListener("click", () => {
-        if (!hideWholesale) return; // nothing to do when globally visible
-
+        if (!hideWholesale) return;
         const id = costChip.dataset.id;
         if (revealedIds.has(id)) {
-          revealedIds.delete(id);           // tap again → hide it back
+          revealedIds.delete(id);
         } else {
-          revealedIds.add(id);              // first tap → reveal
+          revealedIds.add(id);
         }
-        // Re-render just this chip's visual state (no full re-render needed)
-        updateChipState(costChip, id, p.unitType);
+        const revealed = revealedIds.has(id);
+        costChip.classList.toggle("cost-hidden", !revealed);
+        const hint = costChip.querySelector(".reveal-hint");
+        if (hint) hint.classList.toggle("tap-hint", !revealed);
+      });
+
+      // ── Triple dot dropdown ───────────────────────────
+      const moreBtn  = card.querySelector(".more-btn");
+      const dropdown = card.querySelector(`#dropdown-${p.id}`);
+
+      moreBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = dropdown.classList.contains("open");
+
+        // Close any other open dropdowns first
+        document.querySelectorAll(".more-dropdown.open").forEach(d => d.classList.remove("open"));
+
+        if (!isOpen) dropdown.classList.add("open");
       });
 
       return card;
     }
 
-    // ── Update a single chip's blur state in-place ───────
-    // Avoids a full re-render on every tap — smooth and instant.
-    function updateChipState(chip, id, unitType) {
-      const isRevealed = revealedIds.has(id);
-      chip.classList.toggle("cost-hidden", !isRevealed);
-      const hint = chip.querySelector(".reveal-hint");
-      if (hint) hint.classList.toggle("tap-hint", !isRevealed);
-    }
+    // ── Close dropdown on outside tap ────────────────────
+    document.addEventListener("click", () => {
+      document.querySelectorAll(".more-dropdown.open").forEach(d => d.classList.remove("open"));
+    });
 
     // ── XSS Helper ───────────────────────────────────────
     function escapeHtml(str) {
