@@ -54,7 +54,6 @@
 
   <!-- ── Product Grid ─────────────────────────────────── -->
   <main class="product-grid" id="productGrid">
-    <!-- Loading state -->
     <div class="state-message" id="loadingState">
       <div class="spinner"></div>
       <p>Loading inventory…</p>
@@ -82,28 +81,24 @@
     });
 
     // ── State ────────────────────────────────────────────
-    let allProducts  = [];   // Full local array from onSnapshot
+    let allProducts   = [];
     let hideWholesale = false;
 
-    const grid        = document.getElementById("productGrid");
-    const searchEl    = document.getElementById("searchInput");
-    const toggleEl    = document.getElementById("hidePriceToggle");
-    const countEl     = document.getElementById("resultCount");
-    const loadingEl   = document.getElementById("loadingState");
+    // Tracks product IDs individually tapped-to-reveal while global hide is ON.
+    // Toggle always resets this set — it levels everything back.
+    const revealedIds = new Set();
+
+    const grid     = document.getElementById("productGrid");
+    const searchEl = document.getElementById("searchInput");
+    const toggleEl = document.getElementById("hidePriceToggle");
+    const countEl  = document.getElementById("resultCount");
 
     // ── Firestore Real-time Listener ─────────────────────
-    // Uses onSnapshot ordered by lastUpdated desc
-    // → Recently added/edited items float to the top automatically
-    const productsRef = collection(db, "products");
-    const q = query(productsRef, orderBy("lastUpdated", "desc"));
+    const q = query(collection(db, "products"), orderBy("lastUpdated", "desc"));
 
     onSnapshot(q, (snapshot) => {
-      // Rebuild local array from snapshot
-      allProducts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      renderList(); // Re-render with current search term
+      allProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderList();
     }, (err) => {
       console.error("[list.js] Firestore error:", err);
       grid.innerHTML = `
@@ -113,50 +108,44 @@
         </div>`;
     });
 
-    // ── Client-Side Search ───────────────────────────────
-    // Filters against the pre-lowercased 'nameLower' field
-    // in memory — no extra Firestore reads per keystroke
+    // ── Search ───────────────────────────────────────────
     searchEl.addEventListener("input", renderList);
 
-    // ── Privacy Toggle ───────────────────────────────────
+    // ── Global Privacy Toggle ────────────────────────────
+    // Switching in either direction resets ALL individual reveals.
     toggleEl.addEventListener("change", () => {
       hideWholesale = toggleEl.checked;
-      // Apply/remove CSS class on the grid to trigger blur via CSS
-      grid.classList.toggle("hide-wholesale", hideWholesale);
+      revealedIds.clear();   // ← levels up: reset every card to global state
+      renderList();
     });
 
-    // ── Render Function ──────────────────────────────────
+    // ── Render ───────────────────────────────────────────
     function renderList() {
-      const query = searchEl.value.trim().toLowerCase();
-
-      // Filter products by nameLower field
-      const filtered = query
-        ? allProducts.filter(p => p.nameLower && p.nameLower.includes(query))
+      const term = searchEl.value.trim().toLowerCase();
+      const filtered = term
+        ? allProducts.filter(p => p.nameLower && p.nameLower.includes(term))
         : allProducts;
 
-      // Update result count
       countEl.textContent = filtered.length > 0
         ? `${filtered.length} product${filtered.length !== 1 ? "s" : ""} found`
         : "";
 
-      // Clear grid (keep hide-wholesale class state)
-      const wasHiding = grid.classList.contains("hide-wholesale");
       grid.innerHTML = "";
-      if (wasHiding) grid.classList.add("hide-wholesale");
 
       if (filtered.length === 0) {
         grid.innerHTML = `
           <div class="state-message">
-            <div class="icon">${query ? "🔎" : "📦"}</div>
-            <p>${query ? `No products matching "<strong>${escapeHtml(query)}</strong>"` : "No products yet.<br>Add some from the Admin panel."}</p>
+            <div class="icon">${term ? "🔎" : "📦"}</div>
+            <p>${term
+              ? `No products matching "<strong>${escapeHtml(term)}</strong>"`
+              : "No products yet.<br>Add some from the Admin panel."
+            }</p>
           </div>`;
         return;
       }
 
-      // Render each product card
       filtered.forEach((product, idx) => {
-        const card = buildCard(product, idx);
-        grid.appendChild(card);
+        grid.appendChild(buildCard(product, idx));
       });
     }
 
@@ -166,20 +155,13 @@
       card.className = "product-card";
       card.style.animationDelay = `${idx * 0.04}s`;
 
-      // Image section
       const imageHtml = p.imageUrl
         ? `<img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.name)}" loading="lazy" />`
         : `<div class="no-image">🛍️</div>`;
 
-      // Bulk breakdown text
       const bulkText = `1 ${escapeHtml(p.bulkUnit || "unit")} → ${p.piecesPerBulk || "?"} ${escapeHtml(p.unitType || "pcs")}`;
+      const costStr  = p.buyPricePerUnit != null ? `৳${Number(p.buyPricePerUnit).toFixed(2)}` : "—";
 
-      // Cost per unit — ৳ BDT symbol
-      const costStr = p.buyPricePerUnit != null
-        ? `৳${Number(p.buyPricePerUnit).toFixed(2)}`
-        : "—";
-
-      // MRP block (optional)
       const mrpHtml = p.mrpPerUnit != null
         ? `<div class="price-chip mrp-chip">
              <span class="chip-label">MRP</span>
@@ -187,35 +169,58 @@
            </div>`
         : "";
 
+      // Determine blur state for THIS card right now
+      const isRevealed = revealedIds.has(p.id);
+      const blurClass  = hideWholesale && !isRevealed ? "cost-hidden" : "";
+      const tapHint    = hideWholesale && !isRevealed ? "tap-hint" : "";
+
       card.innerHTML = `
         <div class="product-card-inner">
-
-          <!-- Left: Square image -->
           <div class="product-image">${imageHtml}</div>
-
-          <!-- Right: All info -->
           <div class="product-body">
-
             <div class="product-name">${escapeHtml(p.name)}</div>
-
             <div class="product-bulk-info">
               📦 ${escapeHtml(bulkText)} &nbsp;·&nbsp; ৳${Number(p.buyPriceBulk || 0).toFixed(2)}
             </div>
-
             <div class="product-prices">
-              <!-- .buy-price targeted by CSS .hide-wholesale blur rule -->
-              <div class="price-chip buy-price">
+              <div class="price-chip buy-price ${blurClass}" data-id="${escapeHtml(p.id)}">
                 <span class="chip-label">Cost/${escapeHtml(p.unitType || "unit")}</span>
                 <span class="chip-value buy-price-amount">${costStr}</span>
+                <span class="reveal-hint ${tapHint}">👆 Tap</span>
               </div>
               ${mrpHtml}
             </div>
-
           </div>
         </div>
       `;
 
+      // ── Per-card tap handler ──────────────────────────
+      // Only active when global hide is ON.
+      // Tapping toggles this specific product in/out of revealedIds.
+      const costChip = card.querySelector(".buy-price");
+      costChip.addEventListener("click", () => {
+        if (!hideWholesale) return; // nothing to do when globally visible
+
+        const id = costChip.dataset.id;
+        if (revealedIds.has(id)) {
+          revealedIds.delete(id);           // tap again → hide it back
+        } else {
+          revealedIds.add(id);              // first tap → reveal
+        }
+        // Re-render just this chip's visual state (no full re-render needed)
+        updateChipState(costChip, id, p.unitType);
+      });
+
       return card;
+    }
+
+    // ── Update a single chip's blur state in-place ───────
+    // Avoids a full re-render on every tap — smooth and instant.
+    function updateChipState(chip, id, unitType) {
+      const isRevealed = revealedIds.has(id);
+      chip.classList.toggle("cost-hidden", !isRevealed);
+      const hint = chip.querySelector(".reveal-hint");
+      if (hint) hint.classList.toggle("tap-hint", !isRevealed);
     }
 
     // ── XSS Helper ───────────────────────────────────────
