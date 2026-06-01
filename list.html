@@ -174,40 +174,44 @@
       // Bulk breakdown text
       const bulkText = `1 ${escapeHtml(p.bulkUnit || "unit")} → ${p.piecesPerBulk || "?"} ${escapeHtml(p.unitType || "pcs")}`;
 
-      // Cost per unit
+      // Cost per unit — ৳ BDT symbol
       const costStr = p.buyPricePerUnit != null
-        ? `₹${Number(p.buyPricePerUnit).toFixed(2)}`
+        ? `৳${Number(p.buyPricePerUnit).toFixed(2)}`
         : "—";
 
       // MRP block (optional)
       const mrpHtml = p.mrpPerUnit != null
-        ? `<div class="price-block">
-             <span class="price-label">MRP / ${escapeHtml(p.unitType || "unit")}</span>
-             <span class="mrp-amount">₹${Number(p.mrpPerUnit).toFixed(2)}</span>
+        ? `<div class="price-chip mrp-chip">
+             <span class="chip-label">MRP</span>
+             <span class="chip-value mrp-amount">৳${Number(p.mrpPerUnit).toFixed(2)}</span>
            </div>`
         : "";
 
       card.innerHTML = `
-        <div class="product-image">${imageHtml}</div>
-        <div class="product-body">
+        <div class="product-card-inner">
 
-          <div class="product-name">${escapeHtml(p.name)}</div>
+          <!-- Left: Square image -->
+          <div class="product-image">${imageHtml}</div>
 
-          <div class="product-bulk-info">
-            📦 ${escapeHtml(bulkText)}
-            &nbsp;·&nbsp;
-            Bulk ₹${Number(p.buyPriceBulk || 0).toFixed(2)}
-          </div>
+          <!-- Right: All info -->
+          <div class="product-body">
 
-          <div class="product-prices">
-            <!-- .buy-price class is targeted by CSS .hide-wholesale rule -->
-            <div class="price-block buy-price">
-              <span class="price-label">Cost / ${escapeHtml(p.unitType || "unit")}</span>
-              <span class="buy-price-amount">${costStr}</span>
+            <div class="product-name">${escapeHtml(p.name)}</div>
+
+            <div class="product-bulk-info">
+              📦 ${escapeHtml(bulkText)} &nbsp;·&nbsp; ৳${Number(p.buyPriceBulk || 0).toFixed(2)}
             </div>
-            ${mrpHtml}
-          </div>
 
+            <div class="product-prices">
+              <!-- .buy-price targeted by CSS .hide-wholesale blur rule -->
+              <div class="price-chip buy-price">
+                <span class="chip-label">Cost/${escapeHtml(p.unitType || "unit")}</span>
+                <span class="chip-value buy-price-amount">${costStr}</span>
+              </div>
+              ${mrpHtml}
+            </div>
+
+          </div>
         </div>
       `;
 
