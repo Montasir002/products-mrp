@@ -35,12 +35,14 @@
   </header>
 
   <div class="search-bar-wrap">
-    <div class="search-input-row">
-      <div class="search-input-wrap">
-        <span class="search-icon">🔍</span>
-        <input type="search" id="searchInput" placeholder="Search products…" autocomplete="off" autocorrect="off" spellcheck="false" inputmode="search" />
-      </div>
+    <div class="search-input-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="search" id="searchInput" placeholder="Search products…" autocomplete="off" autocorrect="off" spellcheck="false" inputmode="search" />
     </div>
+    
+    <button id="sortToggleBtn" class="sort-btn active">A → Z</button>
+  </div>
+
     <div class="sort-row">
       <button class="sort-btn active" data-sort="alpha">A → Z</button>
       <button class="sort-btn" data-sort="recent">Recent</button>
