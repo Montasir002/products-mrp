@@ -9,17 +9,17 @@ import { getFirestore, doc, getDoc }
 
 // !! REPLACE with your Firebase project config !!
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID"
+  apiKey: "AIzaSyDFZ8EaODgfm8PMMuWfc3zHd8sqzC_8UEI",
+  authDomain: "product-mrp.firebaseapp.com",
+  projectId: "product-mrp",
+  storageBucket: "product-mrp.firebasestorage.app",
+  messagingSenderId: "381421078963",
+  appId: "1:381421078963:web:ada5d795b141fe562d63c6"
 };
 
 // !! REPLACE with your GitHub username and image repo !!
-export const GH_USERNAME = "YOUR_GITHUB_USERNAME";
-export const GH_REPO     = "YOUR_IMAGE_REPO_NAME";
+export const GH_USERNAME = "Montasir002";
+export const GH_REPO     = "image-database";
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
