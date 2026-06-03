@@ -397,27 +397,34 @@ h3 { font-size: 1.1rem; font-weight: 600; }
   background: rgba(15,17,23,0.95);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
-.search-input-row { display: flex; align-items: center; gap: 10px; }
-.search-input-wrap { flex: 1; position: relative; }
+.search-input-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0; /* Crucial: stops the input from pushing buttons off-screen */
+}
 .search-input-wrap .search-icon {
-  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
-  color: var(--muted); font-size: 1rem; pointer-events: none;
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-size: 0.95rem; pointer-events: none;
 }
 .search-input-wrap input {
   width: 100%;
   background: var(--surface); border: 1.5px solid var(--border);
   border-radius: 40px; color: var(--text);
-  font-family: var(--font-body); font-size: 0.95rem;
-  padding: 11px 16px 11px 40px; outline: none; transition: var(--transition);
+  font-family: var(--font-body); font-size: 0.9rem;
+  padding: 9px 12px 9px 34px; outline: none; transition: var(--transition);
 }
 .search-input-wrap input:focus {
   border-color: var(--accent); box-shadow: 0 0 0 3px rgba(245,200,66,0.12);
 }
 
 /* ── Privacy Toggle ─────────────────────────────────────── */
-.privacy-toggle { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.privacy-toggle { display: flex; align-items: center; gap: 8px; white-space: nowrap; flex-shrink: 0; }
 .toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
 .toggle-switch input { opacity: 0; width: 0; height: 0; }
 .toggle-slider {
@@ -440,7 +447,7 @@ h3 { font-size: 1.1rem; font-weight: 600; }
   background: transparent; border: 1.5px solid var(--border);
   color: var(--muted); font-family: var(--font-body);
   font-size: 0.8rem; font-weight: 500; padding: 5px 14px;
-  border-radius: 20px; cursor: pointer; transition: var(--transition);
+  border-radius: 20px; cursor: pointer; transition: var(--transition); flex-shrink: 0;
 }
 .sort-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(245,200,66,0.08); }
 
