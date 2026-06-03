@@ -170,8 +170,8 @@
         r.readAsDataURL(file);
       });
       // !! Replace with your actual GitHub username and image repo name !!
-      const GH_USERNAME = "YOUR_GITHUB_USERNAME";
-      const GH_REPO     = "YOUR_IMAGE_REPO_NAME";
+      const GH_USERNAME = "Montasir002";
+      const GH_REPO     = "image-database";
       const apiUrl = `https://api.github.com/repos/${GH_USERNAME}/${GH_REPO}/contents/images/${safeName}`;
       const resp = await fetch(apiUrl, {
         method: "PUT",
