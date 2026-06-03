@@ -137,15 +137,22 @@
 
     loadMoreBtn.addEventListener("click", fetchNextBatch);
 
-    // Sort
-    document.querySelectorAll(".sort-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        if (btn.dataset.sort === currentSort) return;
-        currentSort = btn.dataset.sort;
-        document.querySelectorAll(".sort-btn").forEach(b => b.classList.toggle("active", b.dataset.sort === currentSort));
-        resetAndReload();
-      });
+        // Sort (Single Toggle Button)
+    const sortToggleBtn = document.getElementById("sortToggleBtn");
+    
+    sortToggleBtn.addEventListener("click", () => {
+      if (currentSort === "alpha") {
+        currentSort = "recent";
+        sortToggleBtn.textContent = "Recent";
+      } else {
+        currentSort = "alpha";
+        sortToggleBtn.textContent = "A → Z";
+      }
+      
+      // This fetches the new sorted data from your database
+      resetAndReload(); 
     });
+
 
     // Search
     let searchTimer;
