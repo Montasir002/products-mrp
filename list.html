@@ -141,11 +141,21 @@
       }, 200);
     });
 
-    // Privacy toggle
-    toggleEl.addEventListener("change", () => {
-      hideWholesale = toggleEl.checked;
-      revealedIds.clear();
-      document.querySelectorAll(".buy-price").forEach(chip => applyMask(chip, chip.dataset.id));
+    // Eye button — show/hide cost chips on update page
+    let showPrices = true;
+    const priceEyeBtn = document.getElementById("priceEyeBtn");
+    priceEyeBtn.addEventListener("click", () => {
+      showPrices = !showPrices;
+      priceEyeBtn.classList.toggle("eye-hidden", !showPrices);
+      document.querySelectorAll(".buy-price").forEach(chip => {
+        chip.classList.toggle("cost-masked", !showPrices);
+      });
+    });
+
+    let searchTimer;
+    searchEl.addEventListener("input",()=>{
+      clearTimeout(searchTimer);
+      searchTimer=setTimeout(()=>{ searchTerm=searchEl.value.trim().toLowerCase(); renderFiltered(); },200);
     });
 
     function resetAndReload() {
